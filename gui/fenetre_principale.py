@@ -4,6 +4,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import math
 
+
 class Application(ctk.CTk):
     def __init__(self):
         super().__init__()
