@@ -4,6 +4,7 @@ venv/
 env/
 ENV/
 .venv/
+MOAvenv/
 
 # Fichiers Python compilés
 __pycache__/
