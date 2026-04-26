@@ -1,42 +1,32 @@
-# Environnements virtuels Python
-King/
+# Environnements virtuels
+MOAvenv/
+.venv/
 venv/
 env/
-ENV/
-.venv/
-MOAvenv/
 
-# Fichiers Python compilés
+# Cache Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-*.pyd
 
-# Distribution / packaging
-dist/
+# Build et distribution
 build/
+dist/
+Visualisateur/
+Visualisateur.zip
+*.spec
 *.egg-info/
-*.egg
 
-# Fichiers de configuration IDE
+# IDE et systeme
+.cursor/
 .vscode/
 .idea/
-*.swp
-*.swo
-*.sublime-project
-*.sublime-workspace
-
-# Fichiers système
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Fichiers de logs
+# Logs et fichiers temporaires
 *.log
-
-# Fichiers temporaires
 *.tmp
 *.bak
 *~
-

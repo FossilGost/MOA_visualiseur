@@ -1,177 +1,136 @@
-# 🖥️ Génération d’un exécutable (.exe) à partir d’un projet Python Tkinter
+# MOA Visualiseur
 
-## 📌 Prérequis
+Application Windows/Python qui calcule et affiche le diametre theorique d'un groupement en MOA a 20, 50, 100, 200 et 300 yards ou metres.
 
-* Python installé (version 3.x)
-* Pip installé
-* Accès au terminal (cmd / PowerShell)
+Version actuelle : `1.3.1`
 
----
+Createur : `FOSSILGOST`
 
-## ⚙️ 1. Création d’un environnement virtuel (venv)
+L'interface est faite avec CustomTkinter. Elle affiche :
 
-```bash
-python -m venv venv
+- un schema de dispersion par distance ;
+- une projection sur une silhouette de reference ;
+- une zone principale sur la tete ;
+- une zone secondaire mobile avec la souris.
+
+## Lancer le projet en Python
+
+### 1. Creer l'environnement virtuel
+
+```powershell
+python -m venv MOAvenv
 ```
 
-### Activation du venv
+### 2. Activer l'environnement
 
-**Windows :**
-
-```bash
-venv\Scripts\activate
+```powershell
+MOAvenv\Scripts\activate
 ```
 
-**Linux / Mac :**
+### 3. Installer les dependances
 
-```bash
-source venv/bin/activate
-```
-
----
-
-## 📦 2. Installation des dépendances
-
-Installer uniquement les bibliothèques nécessaires au projet :
-
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-Si aucun fichier requirements.txt :
+### 4. Lancer l'application
 
-```bash
-pip install pyinstaller
-pip install pillow
-pip install requests
+```powershell
+python main.py
 ```
 
----
+## Creer l'executable Windows
 
-## 📋 3. Sauvegarde des dépendances (recommandé)
+Le build complet passe par :
 
-```bash
-pip freeze > requirements.txt
+```powershell
+python build.py
 ```
 
----
+Ce script appelle `build_exe.py`, puis :
 
-## 🔨 4. Génération du fichier .exe
+1. nettoie les anciens dossiers `build/`, `dist/` et l'ancien `.spec` ;
+2. lance PyInstaller en mode `--onefile` ;
+3. embarque les images de `gui/assets` dans l'executable ;
+4. prepare le dossier `Visualisateur/` ;
+5. cree `Visualisateur.zip`.
 
-Commande de base :
+Le resultat final est :
 
-```bash
-pyinstaller --onefile --windowed main.py
+```text
+Visualisateur.zip
+Visualisateur/
+    MOA_Visualiseur.exe
+    readme.txt
 ```
 
-### Options importantes :
+## Note Windows
 
-* `--onefile` : génère un seul fichier exécutable
-* `--windowed` : supprime la console (utile pour Tkinter)
-* `--name` : nom de l’application
+L'executable n'est pas signe par un certificat officiel. Windows SmartScreen ou certains antivirus peuvent donc afficher un avertissement au premier lancement.
 
-### Exemple :
+Pour distribuer l'application, envoie plutot `Visualisateur.zip` que le fichier `.exe` seul.
 
-```bash
-pyinstaller --onefile --windowed --name MonApp main.py
+## Fichiers importants
+
+```text
+main.py                         Point d'entree de l'application
+app_info.py                     Version actuelle et createur du logiciel
+build.py                        Lance le script de build
+build_exe.py                    Cree et package l'executable
+requirements.txt                Dependances Python
+gui/fenetre_principale.py       Interface, calculs et affichage
+gui/assets/M_01.png             Image de reference
+gui/assets/ico_exe.ico          Icone de l'executable
 ```
 
----
+## Reglage de l'echelle
 
-## 📁 5. Récupération du fichier exécutable
+La projection sur l'image utilise la hauteur de tete comme reference.
 
-Le fichier `.exe` est généré dans le dossier :
+Dans `gui/fenetre_principale.py` :
 
-```bash
-dist/
+```python
+self.head_height_cm = 26
+self.head_left_px = 100
+self.head_right_px = 164
+self.head_top_px = 22
+self.head_bottom_px = 110
 ```
 
-Exemple :
+Les quatre valeurs `head_*_px` placent le cercle de reference sur la tete de l'image `M_01.png`.
 
-```bash
-dist/MonApp.exe
+Le calcul d'echelle est :
+
+```python
+self.pixel_per_cm = (self.head_reference_height_px * self.image_scale) / self.head_height_cm
 ```
 
----
+## Nettoyage
 
-## ⚠️ 6. Gestion des fichiers externes (images, config…)
+Ces fichiers sont generes automatiquement et ne doivent pas etre gardes dans le dossier source :
 
-Si le projet utilise des ressources (images, JSON, etc.) :
-
-```bash
-pyinstaller --onefile --windowed --add-data "images;images" main.py
-```
-
-⚠️ Séparateur :
-
-* Windows → `;`
-* Linux/Mac → `:`
-
----
-
-## 🧩 7. Gestion des imports non détectés
-
-Si une librairie n’est pas incluse automatiquement :
-
-```bash
-pyinstaller --hidden-import=nom_du_module main.py
-```
-
----
-
-## 🧪 8. Test
-
-* Tester le `.exe` sur une autre machine
-* Vérifier :
-
-  * ouverture de l’interface
-  * chargement des images
-  * fonctionnement global
-
----
-
-## 🧼 9. Nettoyage (optionnel)
-
-Supprimer les dossiers inutiles après build :
-
-```bash
+```text
 build/
+dist/
+Visualisateur/
+Visualisateur.zip
+MOA_Visualiseur.spec
 __pycache__/
 ```
 
----
+Ils sont ignores par `.gitignore` et peuvent etre recrees avec :
 
-## 🚀 10. Bonnes pratiques
-
-* Utiliser un venv propre
-* Éviter les dépendances inutiles
-* Toujours tester hors environnement de dev
-* Versionner `requirements.txt`
-
----
-
-## 📌 Exemple de structure projet
-
-```
-mon_projet/
-│
-├── main.py
-├── requirements.txt
-├── images/
-│
-├── venv/
-├── build/
-├── dist/
+```powershell
+python build.py
 ```
 
----
+## Version et historique
 
-## ✅ Résultat
+La version du logiciel est definie dans `app_info.py` :
 
-Un fichier exécutable autonome :
-
+```python
+APP_VERSION = "1.3.1"
+APP_CREATOR = "FOSSILGOST"
 ```
-dist/MonApp.exe
-```
 
-L’application peut être lancée sans installer Python.
+Les modifications sont suivies dans `CHANGELOG.md`.

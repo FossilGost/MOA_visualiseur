@@ -1,18 +1,30 @@
-import math
+﻿import math
+import sys
 import tkinter as tk
+from pathlib import Path
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
+from app_info import APP_CREATOR, APP_VERSION
+
+
+def resource_path(relative_path):
+    """Retourne le bon chemin en mode Python normal ou en .exe PyInstaller."""
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    return base_path / relative_path
+
 
 class Application(ctk.CTk):
+    """Fenetre principale : interface, calculs MOA et affichages graphiques."""
+
     def __init__(self):
         super().__init__()
 
-        self.title("Calculateur de MOA")
-        self.geometry("1280x860")
-        self.minsize(500,500)
-        self.iconbitmap("gui/assets/buste_knight.ico")
+        self.title(f"Calculateur de MOA - Version {APP_VERSION} - {APP_CREATOR}")
+        self.geometry("1280x740")
+        self.minsize(1280, 740)
+        self.iconbitmap(resource_path("gui/assets/ico_exe.ico"))
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -24,6 +36,8 @@ class Application(ctk.CTk):
             "muted": "#a8b3c7",
             "line": "#f77f00",
             "line_soft": "#f9c74f",
+            "violet": "#a78bfa",
+            "cyan": "#00b4d8",
             "blue": "#0057b7",
             "red": "#e63946",
             "green": "#06d6a0",
@@ -31,7 +45,38 @@ class Application(ctk.CTk):
 
         self.configure(fg_color=self.colors["bg"])
 
-        self.reference_image_path = "gui/assets/M_01.png"
+        self.distance_values = (20, 50, 100, 200, 300)
+        self.range_modes = {
+            "Courte portee": (20, 50, 100),
+            "Longue portee": (100, 200, 300),
+        }
+        self.distance_modes = {
+            "Imperial system": {"suffix": "yd", "cm_per_unit": 91.44},
+            "Metric system": {"suffix": "m", "cm_per_unit": 100.0},
+        }
+        self.distance_mode = tk.StringVar(value="Imperial system")
+        self.range_mode = tk.StringVar(value="Courte portee")
+        self.distance_colors = {
+            20: self.colors["violet"],
+            50: self.colors["cyan"],
+            100: self.colors["blue"],
+            200: self.colors["red"],
+            300: self.colors["green"],
+        }
+
+        # Images embarquees dans l'exe : resource_path marche aussi hors PyInstaller.
+        self.reference_image_paths = [
+            resource_path(f"gui/assets/M_{index:02}.png")
+            for index in range(1, 9)
+        ]
+        self.reference_image_paths = [
+            path for path in self.reference_image_paths if path.exists()
+        ]
+        if not self.reference_image_paths:
+            raise FileNotFoundError("Aucune image M_01.png a M_08.png trouvee.")
+
+        self.current_image_index = 0
+        self.reference_image_path = self.reference_image_paths[self.current_image_index]
         self.image_original = Image.open(self.reference_image_path)
         self.image_original_width, self.image_original_height = self.image_original.size
         self.image_height = 500
@@ -49,9 +94,11 @@ class Application(ctk.CTk):
         self.max_photo_width = 520
         self.max_photo_height = 680
         self.max_photo_panel_width = 460
+        self.torso_follow_mouse = True
+        self.torso_mouse_center = None
 
-        # Réglage manuel du cercle jaune de tête sur l'image d'origine M_01.png.
-        # Modifie ces 4 valeurs si le cercle ne va pas exactement du menton à la cime.
+        # Reglage manuel du cercle jaune de tete sur l'image d'origine M_01.png.
+        # Modifie ces 4 valeurs si le cercle ne va pas exactement du menton a la cime.
         # x = horizontal, y = vertical, en pixels sur l'image originale.
         self.head_left_px = 100
         self.head_right_px = 164
@@ -71,6 +118,8 @@ class Application(ctk.CTk):
         self.torso_oval = (156, 178, 194, 216)
         self.torso_center = (175, 197)
         self.head_height_cm = 26
+
+        # Conversion pixels -> centimetres basee sur la hauteur de tete de reference.
         self.head_reference_height_px = self.head_bottom_px - self.head_top_px
         self.pixel_per_cm = (
             self.head_reference_height_px * self.image_scale
@@ -79,8 +128,9 @@ class Application(ctk.CTk):
         self.init_ui()
 
     def init_ui(self):
-        self.sidebar_min_width = 118
-        self.sidebar_max_width = 160
+        """Construit la navigation principale puis affiche l'accueil."""
+        self.sidebar_min_width = 136
+        self.sidebar_max_width = 176
         self.sidebar = ctk.CTkFrame(
             self,
             width=self.sidebar_max_width,
@@ -121,6 +171,25 @@ class Application(ctk.CTk):
         )
         self.button2.pack(fill="x", padx=12, pady=8)
 
+        self.sidebar_footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.sidebar_footer.pack(side="bottom", fill="x", padx=10, pady=(0, 14))
+
+        self.sidebar_version = ctk.CTkLabel(
+            self.sidebar_footer,
+            text=f"Version {APP_VERSION}",
+            font=ctk.CTkFont(size=10),
+            text_color=self.colors["muted"],
+        )
+        self.sidebar_version.pack()
+
+        self.sidebar_creator = ctk.CTkLabel(
+            self.sidebar_footer,
+            text=APP_CREATOR,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=self.colors["line_soft"],
+        )
+        self.sidebar_creator.pack()
+
         self.main_frame = ctk.CTkFrame(
             self,
             fg_color=self.colors["bg"],
@@ -149,7 +218,10 @@ class Application(ctk.CTk):
         ).pack(anchor="w", padx=18, pady=(14, 2))
         ctk.CTkLabel(
             self.header_frame,
-            text="Entrez la précision de l'arme pour visualiser le diamètre du groupement à 100, 200 et 300 yards.",
+            text=(
+                "Entrez la precision de l'arme pour visualiser le diametre du "
+                "groupement en courte ou longue portee, en yards ou en metres reels."
+            ),
             font=ctk.CTkFont(size=13),
             text_color=self.colors["muted"],
             wraplength=780,
@@ -184,7 +256,7 @@ class Application(ctk.CTk):
     def create_controls(self):
         form_frame = ctk.CTkFrame(
             self.left_frame,
-            height=112,
+            height=190,
             fg_color=self.colors["panel_alt"],
             corner_radius=8,
         )
@@ -212,8 +284,9 @@ class Application(ctk.CTk):
             input_row,
             placeholder_text="MOA",
             height=32,
+            width=120,
         )
-        self.MOA_Entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.MOA_Entry.pack(side="left", padx=(0, 8))
         self.MOA_Entry.bind("<Return>", lambda _event: self.calculer_moa())
 
         ctk.CTkButton(
@@ -222,7 +295,45 @@ class Application(ctk.CTk):
             height=32,
             width=100,
             command=self.calculer_moa,
-        ).pack(side="right")
+        ).pack(side="left")
+
+        selectors_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        selectors_frame.pack(fill="x", padx=12, pady=(0, 6))
+        selectors_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            selectors_frame,
+            text="Systeme",
+            font=ctk.CTkFont(size=12),
+            text_color=self.colors["muted"],
+            width=62,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 6))
+
+        self.unit_selector = ctk.CTkSegmentedButton(
+            selectors_frame,
+            values=list(self.distance_modes.keys()),
+            variable=self.distance_mode,
+            command=self.on_distance_mode_changed,
+        )
+        self.unit_selector.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+
+        ctk.CTkLabel(
+            selectors_frame,
+            text="Portee",
+            font=ctk.CTkFont(size=12),
+            text_color=self.colors["muted"],
+            width=52,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(0, 6))
+
+        self.range_selector = ctk.CTkSegmentedButton(
+            selectors_frame,
+            values=list(self.range_modes.keys()),
+            variable=self.range_mode,
+            command=self.on_range_mode_changed,
+        )
+        self.range_selector.grid(row=1, column=1, sticky="ew", pady=(0, 6))
 
         self.error_label = ctk.CTkLabel(
             form_frame,
@@ -248,8 +359,9 @@ class Application(ctk.CTk):
 
         moa_note = (
             "Le MOA est une mesure d'angle : plus la distance augmente, plus le "
-            "groupement apparent s'ouvre. Une arme à 2 MOA ne devient pas moins "
-            "précise à 300 yards ; le même angle couvre simplement un cercle plus grand."
+            "groupement apparent s'ouvre. Une arme a 2 MOA ne devient pas moins "
+            "precise a 300 metres ou 300 yards ; le meme angle couvre simplement "
+            "un cercle plus grand."
         )
         ctk.CTkLabel(
             self.result_frame,
@@ -260,28 +372,65 @@ class Application(ctk.CTk):
             wraplength=650,
         ).pack(anchor="w", padx=14, pady=(0, 10))
 
-        legend_frame = ctk.CTkFrame(self.result_frame, fg_color="transparent")
-        legend_frame.pack(fill="x", padx=14, pady=(0, 10))
+        self.legend_frame = ctk.CTkFrame(self.result_frame, fg_color="transparent")
+        self.legend_frame.pack(fill="x", padx=14, pady=(0, 10))
+        self.update_distance_legend()
 
-        for text, color in (
-            ("100 yd = 91,44 m", self.colors["blue"]),
-            ("200 yd = 182,88 m", self.colors["red"]),
-            ("300 yd = 274,32 m = 0,274 km", self.colors["green"]),
-        ):
-            item = ctk.CTkFrame(legend_frame, fg_color="transparent")
-            item.pack(side="left", padx=(0, 18))
+    def get_distance_config(self):
+        return self.distance_modes[self.distance_mode.get()]
 
-            ctk.CTkFrame(item, width=22, height=3, fg_color=color).pack(
-                side="left", padx=(0, 6)
-            )
+    def get_active_distances(self):
+        return self.range_modes[self.range_mode.get()]
+
+    def get_max_active_distance(self):
+        return max(self.get_active_distances())
+
+    def format_distance_label(self, distance):
+        unit = self.get_distance_config()["suffix"]
+        return f"{distance} {unit}"
+
+    def update_distance_legend(self):
+        if not hasattr(self, "legend_frame"):
+            return
+
+        for widget in self.legend_frame.winfo_children():
+            widget.destroy()
+
+        for distance in self.get_active_distances():
+            item = ctk.CTkFrame(self.legend_frame, fg_color="transparent")
+            item.pack(side="left", padx=(0, 14), pady=(0, 4))
+
+            ctk.CTkFrame(
+                item,
+                width=20,
+                height=3,
+                fg_color=self.distance_colors[distance],
+            ).pack(side="left", padx=(0, 6))
             ctk.CTkLabel(
                 item,
-                text=text,
+                text=self.format_distance_label(distance),
                 font=ctk.CTkFont(size=12),
                 text_color=self.colors["muted"],
             ).pack(side="left")
 
+    def on_distance_mode_changed(self, _value=None):
+        self.update_distance_legend()
+        if hasattr(self, "distance_labels"):
+            self.update_diagram_layout()
+        if self.current_diameters:
+            self.calculer_moa()
+
+    def on_range_mode_changed(self, _value=None):
+        self.update_distance_legend()
+        if hasattr(self, "head_circles"):
+            self.update_visible_photo_circles()
+        if self.current_diameters:
+            self.calculer_moa()
+        elif hasattr(self, "distance_labels"):
+            self.update_diagram_layout()
+
     def create_diagram(self):
+        """Cree le schema horizontal qui compare les distances choisies."""
         self.draw_frame = ctk.CTkFrame(
             self.left_frame,
             height=230,
@@ -309,7 +458,7 @@ class Application(ctk.CTk):
 
         self.diagram_center_y = 120
         self.diagram_max_radius = 68
-        self.diagram_x = {0: 80, 100: 310, 200: 530, 300: 750}
+        self.diagram_x = {0: 80, 20: 200, 50: 310, 100: 420, 200: 585, 300: 750}
 
         self.ligne_centrale = self.canvas.create_line(
             self.diagram_x[0],
@@ -336,35 +485,43 @@ class Application(ctk.CTk):
             fill=self.colors["line_soft"],
         )
 
-        self.cible_100 = self.canvas.create_oval(
-            298, 108, 322, 132, fill=self.colors["blue"], outline=""
-        )
-        self.cible_200 = self.canvas.create_oval(
-            512, 102, 548, 138, fill=self.colors["red"], outline=""
-        )
-        self.cible_300 = self.canvas.create_oval(
-            728, 98, 772, 142, fill=self.colors["green"], outline=""
-        )
+        self.diagram_targets = {}
+        for distance in self.distance_values:
+            self.diagram_targets[distance] = self.canvas.create_oval(
+                0,
+                0,
+                1,
+                1,
+                fill=self.distance_colors[distance],
+                outline="",
+            )
 
         self.distance_labels = {}
-        for distance, text in ((0, "0 yd"), (100, "100 yd"), (200, "200 yd"), (300, "300 yd")):
+        self.distance_labels[0] = self.canvas.create_text(
+            self.diagram_x[0],
+            192,
+            text="0",
+            fill="#f5f7fb",
+            font=("Arial", 10),
+        )
+        for distance in self.distance_values:
             self.distance_labels[distance] = self.canvas.create_text(
                 self.diagram_x[distance],
                 192,
-                text=text,
+                text=self.format_distance_label(distance),
                 fill="#f5f7fb",
                 font=("Arial", 10),
             )
 
-        self.label_100 = self.canvas.create_text(
-            self.diagram_x[100], 216, text="-- cm", fill="#f5f7fb", font=("Arial", 10, "bold")
-        )
-        self.label_200 = self.canvas.create_text(
-            self.diagram_x[200], 216, text="-- cm", fill="#f5f7fb", font=("Arial", 10, "bold")
-        )
-        self.label_300 = self.canvas.create_text(
-            self.diagram_x[300], 216, text="-- cm", fill="#f5f7fb", font=("Arial", 10, "bold")
-        )
+        self.value_labels = {}
+        for distance in self.distance_values:
+            self.value_labels[distance] = self.canvas.create_text(
+                self.diagram_x[distance],
+                216,
+                text="-- cm",
+                fill="#f5f7fb",
+                font=("Arial", 10, "bold"),
+            )
 
         self.moa_title = self.canvas.create_text(
             415,
@@ -376,13 +533,108 @@ class Application(ctk.CTk):
         self.canvas.bind("<Configure>", self.update_diagram_layout)
         self.after(50, self.update_diagram_layout)
 
+    def update_visible_photo_circles(self):
+        active_distances = set(self.get_active_distances())
+        for distance in self.distance_values:
+            state = "normal" if distance in active_distances else "hidden"
+            if hasattr(self, "head_circles"):
+                self.canvas_photo.itemconfig(self.head_circles[distance], state=state)
+            if hasattr(self, "torso_circles"):
+                self.canvas_photo.itemconfig(self.torso_circles[distance], state=state)
+
+    def update_image_selector_label(self):
+        if not hasattr(self, "image_number_item"):
+            return
+
+        total = len(self.reference_image_paths)
+        self.canvas_photo.itemconfig(
+            self.image_number_item,
+            text=f"M_{self.current_image_index + 1:02} / M_{total:02}",
+        )
+
+    def update_image_navigation_layout(self):
+        if not hasattr(self, "image_number_item"):
+            return
+
+        bottom_y = self.photo_offset_y + self.image_height - 22
+        left_x = self.photo_offset_x + 28
+        right_x = self.photo_offset_x + self.image_width - 28
+        center_x = self.photo_offset_x + self.image_width / 2
+
+        self.canvas_photo.coords(self.image_prev_item, left_x, bottom_y)
+        self.canvas_photo.coords(self.image_next_item, right_x, bottom_y)
+        self.canvas_photo.coords(self.image_number_item, center_x, bottom_y)
+
+        self.canvas_photo.tag_raise(self.image_prev_item)
+        self.canvas_photo.tag_raise(self.image_next_item)
+        self.canvas_photo.tag_raise(self.image_number_item)
+
+    def create_image_navigation(self):
+        self.image_prev_item = self.canvas_photo.create_text(
+            0,
+            0,
+            text="<",
+            fill=self.colors["red"],
+            font=("Arial", 32, "bold"),
+            tags=("image_nav", "image_prev"),
+        )
+        self.image_number_item = self.canvas_photo.create_text(
+            0,
+            0,
+            text="",
+            fill=self.colors["line_soft"],
+            font=("Arial", 12, "bold"),
+            tags=("image_nav", "image_number"),
+        )
+        self.image_next_item = self.canvas_photo.create_text(
+            0,
+            0,
+            text=">",
+            fill=self.colors["red"],
+            font=("Arial", 32, "bold"),
+            tags=("image_nav", "image_next"),
+        )
+        self.canvas_photo.tag_bind(
+            "image_prev",
+            "<Button-1>",
+            lambda _event: self.change_reference_image(-1),
+        )
+        self.canvas_photo.tag_bind(
+            "image_next",
+            "<Button-1>",
+            lambda _event: self.change_reference_image(1),
+        )
+        self.canvas_photo.tag_bind(
+            "image_nav",
+            "<Enter>",
+            lambda _event: self.canvas_photo.configure(cursor="hand2"),
+        )
+        self.canvas_photo.tag_bind(
+            "image_nav",
+            "<Leave>",
+            lambda _event: self.canvas_photo.configure(cursor=""),
+        )
+        self.update_image_selector_label()
+
+    def change_reference_image(self, direction):
+        total = len(self.reference_image_paths)
+        self.current_image_index = (self.current_image_index + direction) % total
+        self.reference_image_path = self.reference_image_paths[self.current_image_index]
+        self.image_original = Image.open(self.reference_image_path)
+        self.image_original_width, self.image_original_height = self.image_original.size
+        self.update_image_selector_label()
+        self.update_photo_layout()
+
     def create_photo_canvas(self):
+        photo_header = ctk.CTkFrame(self.right_frame, fg_color="transparent")
+        photo_header.pack(fill="x", padx=14, pady=(12, 6))
+
         ctk.CTkLabel(
-            self.right_frame,
-            text="Impact projeté sur la silhouette",
+            photo_header,
+            text="Impact projete sur la silhouette",
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=self.colors["text"],
-        ).pack(anchor="w", padx=14, pady=(12, 6))
+        ).pack(side="left")
 
         self.canvas_photo = tk.Canvas(
             self.right_frame,
@@ -415,34 +667,37 @@ class Application(ctk.CTk):
             outline="#d8a928",
             width=1,
         )
-        self.cercle_100 = self.canvas_photo.create_oval(
-            head_x1, head_y1, head_x2, head_y2, outline=self.colors["blue"], width=2
-        )
-        self.cercle_200 = self.canvas_photo.create_oval(
-            head_x1, head_y1, head_x2, head_y2, outline=self.colors["red"], width=2
-        )
-        self.cercle_300 = self.canvas_photo.create_oval(
-            head_x1, head_y1, head_x2, head_y2, outline=self.colors["green"], width=2
-        )
-        self.torso_cercle_100 = self.canvas_photo.create_oval(
-            torso_x1, torso_y1, torso_x2, torso_y2, outline="#174f8f", width=1
-        )
-        self.torso_cercle_200 = self.canvas_photo.create_oval(
-            torso_x1, torso_y1, torso_x2, torso_y2, outline="#9f2430", width=1
-        )
-        self.torso_cercle_300 = self.canvas_photo.create_oval(
-            torso_x1, torso_y1, torso_x2, torso_y2, outline="#05906f", width=1
-        )
+        self.head_circles = {}
+        self.torso_circles = {}
+        for distance in self.distance_values:
+            self.head_circles[distance] = self.canvas_photo.create_oval(
+                head_x1,
+                head_y1,
+                head_x2,
+                head_y2,
+                outline=self.distance_colors[distance],
+                width=2,
+            )
+            self.torso_circles[distance] = self.canvas_photo.create_oval(
+                torso_x1,
+                torso_y1,
+                torso_x2,
+                torso_y2,
+                outline=self.distance_colors[distance],
+                width=1,
+            )
 
-        legend = ctk.CTkFrame(self.right_frame, fg_color="transparent")
-        legend.pack(anchor="w", padx=14, pady=(0, 12))
+        self.create_image_navigation()
+
+        legend = ctk.CTkFrame(self.right_frame, fg_color=self.colors["panel_alt"], corner_radius=8)
+        legend.pack(fill="x", padx=14, pady=(0, 12))
 
         for text, color in (
-            ("Tête : zone principale", "#f9c74f"),
-            ("Cœur : zone secondaire", "#d8a928"),
+            ("Tete", "#f9c74f"),
+            ("Coeur", "#d8a928"),
         ):
             item = ctk.CTkFrame(legend, fg_color="transparent")
-            item.pack(anchor="w", pady=(0, 3))
+            item.pack(side="left", padx=10, pady=8)
             ctk.CTkFrame(item, width=18, height=3, fg_color=color).pack(
                 side="left", padx=(0, 6)
             )
@@ -450,13 +705,17 @@ class Application(ctk.CTk):
                 item,
                 text=text,
                 font=ctk.CTkFont(size=12),
-            text_color=self.colors["muted"],
+                text_color=self.colors["muted"],
             ).pack(side="left")
 
         self.canvas_photo.bind("<Configure>", self.update_photo_layout)
+        self.canvas_photo.bind("<Motion>", self.update_torso_mouse_center)
+        self.canvas_photo.bind("<Leave>", self.reset_torso_mouse_center)
+        self.update_visible_photo_circles()
         self.after(50, self.update_photo_layout)
 
     def afficher_explication(self):
+        """Affiche la legende detaillee et les limites d'interpretation du MOA."""
         self.clear_main_frame()
 
         panel = ctk.CTkFrame(
@@ -466,52 +725,138 @@ class Application(ctk.CTk):
         )
         panel.pack(fill="both", expand=True)
 
-        ctk.CTkLabel(
+        scroll = ctk.CTkScrollableFrame(
             panel,
-            text="Comprendre le MOA des armes",
+            fg_color="transparent",
+            scrollbar_button_color=self.colors["panel_alt"],
+            scrollbar_button_hover_color=self.colors["line"],
+        )
+        scroll.pack(fill="both", expand=True, padx=18, pady=18)
+
+        ctk.CTkLabel(
+            scroll,
+            text="Legende et conditions d'interpretation du MOA",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=self.colors["text"],
-        ).pack(anchor="w", padx=22, pady=(22, 10))
+        ).pack(anchor="w", pady=(0, 10))
 
-        explanation = (
-            "Le MOA signifie Minute of Angle, ou minute d'angle. C'est une unité "
-            "angulaire utilisée pour décrire la précision d'une arme, le réglage "
-            "d'une lunette ou la taille d'un groupement. Comme il s'agit d'un angle, "
-            "le cercle couvert augmente avec la distance : une même valeur de MOA "
-            "donne un diamètre deux fois plus grand à 200 yards qu'à 100 yards, et "
-            "trois fois plus grand à 300 yards.\n\n"
-            "En pratique, un groupement de 1 MOA correspond à environ 2,91 cm de "
-            "diamètre à 100 yards. Une arme annoncée à 2 MOA regroupe donc ses tirs "
-            "dans un cercle d'environ 5,82 cm à 100 yards, si les conditions de tir "
-            "et les munitions sont régulières."
+        def add_section(title, body):
+            ctk.CTkLabel(
+                scroll,
+                text=title,
+                font=ctk.CTkFont(size=17, weight="bold"),
+                text_color=self.colors["line_soft"],
+            ).pack(anchor="w", pady=(14, 6))
+            ctk.CTkLabel(
+                scroll,
+                text=body,
+                font=ctk.CTkFont(size=14),
+                text_color=self.colors["text"],
+                justify="left",
+                wraplength=900,
+            ).pack(anchor="w", fill="x")
+
+        add_section(
+            "Definition",
+            "Le MOA (Minute Of Angle) est une unite angulaire utilisee pour mesurer "
+            "la precision d'une arme a feu. Elle correspond a la dispersion d'un "
+            "projectile unique, une balle, autour d'un point vise.\n\n"
+            "En pratique, un groupement de 1 MOA correspond a environ 2,66 cm a "
+            "100 yards, et environ 2,91 cm a 100 metres. Une meme valeur de MOA "
+            "donne donc un diametre proportionnel a la distance choisie.",
         )
 
-        ctk.CTkLabel(
-            panel,
-            text=explanation,
-            font=ctk.CTkFont(size=15),
-            text_color=self.colors["text"],
-            justify="left",
-            wraplength=780,
-        ).pack(anchor="w", padx=22, pady=(0, 18))
+        add_section(
+            "Munitions a dispersion",
+            "Dans le cas des munitions a dispersion, comme les cartouches a grenaille, "
+            "le MOA n'est pas une mesure adaptee. Ces munitions produisent une gerbe "
+            "de projectiles et non un impact unique. La notion de precision est alors "
+            "remplacee par des notions de diametre de gerbe et de densite d'impact.\n\n"
+            "Cependant, dans un souci de coherence et de comparaison entre differentes "
+            "categories d'armes, un MOA equivalent peut etre utilise. Cette valeur est "
+            "une approximation permettant de representer la dispersion globale sous "
+            "forme angulaire, mais elle ne constitue pas une mesure rigoureuse.",
+        )
 
-        ctk.CTkLabel(
-            panel,
-            text="Formule utilisée",
-            font=ctk.CTkFont(size=17, weight="bold"),
-            text_color=self.colors["text"],
-        ).pack(anchor="w", padx=22, pady=(6, 8))
+        table = ctk.CTkFrame(scroll, fg_color=self.colors["panel_alt"], corner_radius=8)
+        table.pack(fill="x", pady=(16, 8))
 
-        ctk.CTkLabel(
-            panel,
-            text="Diamètre = 2 x tan((MOA / 60) degrés) x distance",
-            font=ctk.CTkFont(size=14),
-            text_color=self.colors["muted"],
-            justify="left",
-            wraplength=780,
-        ).pack(anchor="w", padx=22, pady=(0, 22))
+        headers = ("Categorie d'arme", "MOA moyen", "Remarque")
+        rows = (
+            ("Arme de poing", "5 a 15 MOA", "Tres dependant du tireur"),
+            ("Fusil d'epaule (semi-auto)", "2 a 4 MOA", "Standard militaire / civil"),
+            ("Fusil a pompe", "4 a 6 MOA (slug)\n30 a 80 MOA equiv. (grenaille)", "Tres variable"),
+            ("Fusil a verrou", "0.5 a 1.5 MOA", "Haute precision"),
+        )
+
+        for column in range(3):
+            table.grid_columnconfigure(column, weight=1, uniform="moa_table")
+
+        for column, text in enumerate(headers):
+            ctk.CTkLabel(
+                table,
+                text=text,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=self.colors["line_soft"],
+                anchor="w",
+            ).grid(row=0, column=column, sticky="ew", padx=10, pady=(10, 6))
+
+        for row_index, row in enumerate(rows, start=1):
+            row_color = self.colors["panel"] if row_index % 2 else "#1d2533"
+            for column, text in enumerate(row):
+                cell = ctk.CTkFrame(table, fg_color=row_color, corner_radius=4)
+                cell.grid(row=row_index, column=column, sticky="nsew", padx=4, pady=3)
+                ctk.CTkLabel(
+                    cell,
+                    text=text,
+                    font=ctk.CTkFont(size=13, weight="bold" if column == 1 else "normal"),
+                    text_color=self.colors["line_soft"] if column == 1 else self.colors["text"],
+                    justify="left",
+                    anchor="w",
+                    wraplength=260,
+                ).pack(anchor="w", fill="x", padx=8, pady=8)
+
+        add_section(
+            "Conditions de reference",
+            "Les valeurs de MOA indiquees sont valables dans des conditions ideales :\n\n"
+            "- Tireur parfaitement stable et experimente, sans erreur humaine\n"
+            "- Arme correctement entretenue et en bon etat\n"
+            "- Munitions de qualite constante\n"
+            "- Conditions meteorologiques clementes, sans vent significatif\n"
+            "- Distance de tir maitrisee et environnement controle",
+        )
+
+        add_section(
+            "Facteurs influencant le MOA",
+            "Le MOA reel peut varier de maniere significative selon de nombreux "
+            "parametres.\n\n"
+            "1. L'arme : qualite du canon, usure, rigidite, longueur, type de canon "
+            "et systeme de fonctionnement.\n\n"
+            "2. Les munitions : regularite de fabrication, type de projectile, charge "
+            "propulsive et qualite globale de la cartouche.\n\n"
+            "3. Le systeme de visee : qualite de l'optique ou des organes de visee, "
+            "reglage du zero et stabilite du montage.\n\n"
+            "4. Le tireur : position de tir, maitrise du depart du coup, gestion du "
+            "recul et experience globale.\n\n"
+            "5. L'environnement : vent, temperature, humidite, pression atmospherique "
+            "et conditions de luminosite.",
+        )
+
+        add_section(
+            "Formule utilisee",
+            "Diametre = tan((MOA / 60) degres) x distance",
+        )
+
+        add_section(
+            "Conclusion",
+            "Le MOA est une mesure utile pour comparer la precision des armes tirant "
+            "des projectiles uniques. Dans le cas des armes a dispersion, il doit etre "
+            "interprete avec prudence et considere comme un outil simplifie de "
+            "comparaison plutot qu'une donnee physique exacte.",
+        )
 
     def clear_main_frame(self):
+        """Vide la zone centrale avant d'afficher une autre page."""
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
@@ -530,11 +875,12 @@ class Application(ctk.CTk):
             text="MOA" if compact else "Minute of Angle",
             font=ctk.CTkFont(size=10 if compact else 11),
         )
-        button_pad = 8 if compact else 12
+        button_pad = 10 if compact else 14
         self.button1.pack_configure(padx=button_pad)
         self.button2.pack_configure(padx=button_pad)
 
     def calculer_moa(self):
+        """Valide la saisie puis met a jour le schema et la silhouette."""
         raw_moa = self.MOA_Entry.get().strip().replace(",", ".")
         self.error_label.configure(text="")
 
@@ -547,18 +893,18 @@ class Application(ctk.CTk):
             return
 
         diameters = {
-            100: self.calculate_diameter(moa, 100),
-            200: self.calculate_diameter(moa, 200),
-            300: self.calculate_diameter(moa, 300),
+            distance: self.calculate_diameter(moa, distance)
+            for distance in self.get_active_distances()
         }
 
         self.update_diagram(diameters)
         self.update_photo_circles(diameters)
 
-    def calculate_diameter(self, moa, yards):
-        distance_cm = yards * 91.44
+    def calculate_diameter(self, moa, distance):
+        """Convertit une valeur MOA en diametre de groupement en centimetres."""
+        distance_cm = distance * self.get_distance_config()["cm_per_unit"]
         angle_radians = math.radians(moa / 60)
-        return round(2 * math.tan(angle_radians) * distance_cm, 2)
+        return round(math.tan(angle_radians) * distance_cm, 2)
 
     def scaled_photo_coords(self, x1, y1, x2, y2):
         scale = self.image_scale
@@ -569,7 +915,21 @@ class Application(ctk.CTk):
             self.photo_offset_y + y2 * scale,
         )
 
+    def update_torso_mouse_center(self, event):
+        if not self.torso_follow_mouse:
+            return
+
+        self.torso_mouse_center = (event.x, event.y)
+        if self.current_diameters:
+            self.update_photo_circles(self.current_diameters)
+
+    def reset_torso_mouse_center(self, _event=None):
+        self.torso_mouse_center = None
+        if self.current_diameters:
+            self.update_photo_circles(self.current_diameters)
+
     def update_photo_layout(self, _event=None):
+        """Redimensionne l'image sans perdre l'echelle pixels/centimetres."""
         available_width = max(self.canvas_photo.winfo_width(), 80)
         available_height = max(self.canvas_photo.winfo_height(), 160)
         fit_width = min(available_width, self.max_photo_width)
@@ -596,6 +956,7 @@ class Application(ctk.CTk):
             self.photo_offset_x,
             self.photo_offset_y,
         )
+        self.update_image_navigation_layout()
 
         head_coords = self.scaled_photo_coords(*self.head_oval)
         torso_coords = self.scaled_photo_coords(*self.torso_oval)
@@ -606,12 +967,13 @@ class Application(ctk.CTk):
             self.update_photo_circles(self.current_diameters)
             return
 
-        for item in (self.cercle_100, self.cercle_200, self.cercle_300):
+        for item in self.head_circles.values():
             self.canvas_photo.coords(item, *head_coords)
-        for item in (self.torso_cercle_100, self.torso_cercle_200, self.torso_cercle_300):
+        for item in self.torso_circles.values():
             self.canvas_photo.coords(item, *torso_coords)
 
     def update_diagram_layout(self, _event=None):
+        """Repositionne le schema quand la fenetre change de taille."""
         width = max(self.canvas.winfo_width(), 320)
         height = max(self.canvas.winfo_height(), 120)
         margin_x = max(54, min(140, int(width * 0.08)))
@@ -620,12 +982,10 @@ class Application(ctk.CTk):
         top_space = 44
         bottom_space = 48
         self.diagram_center_y = max(top_space + 18, min(height - bottom_space, int(height * 0.46)))
-        self.diagram_x = {
-            0: margin_x,
-            100: margin_x + int(line_width / 3),
-            200: margin_x + int((line_width * 2) / 3),
-            300: width - margin_x,
-        }
+        max_distance = self.get_max_active_distance()
+        self.diagram_x = {0: margin_x}
+        for distance in self.distance_values:
+            self.diagram_x[distance] = margin_x + int(line_width * (distance / max_distance))
         self.diagram_max_radius = max(
             8,
             min(
@@ -642,66 +1002,93 @@ class Application(ctk.CTk):
             self.ligne_centrale,
             self.diagram_x[0],
             self.diagram_center_y,
-            self.diagram_x[300],
+            self.diagram_x[max_distance],
             self.diagram_center_y,
         )
         self.canvas.coords(self.moa_title, width / 2, 20)
 
-        for distance, item in self.distance_labels.items():
-            self.canvas.coords(item, self.diagram_x[distance], label_y)
+        active_distances = set(self.get_active_distances())
+        compact_labels = width < 620
+        for index, (distance, item) in enumerate(self.distance_labels.items()):
+            state = "normal" if distance == 0 or distance in active_distances else "hidden"
+            self.canvas.itemconfig(item, state=state)
+            y = label_y - 12 if compact_labels and index % 2 else label_y
+            self.canvas.coords(item, self.diagram_x[distance], y)
+            if distance:
+                self.canvas.itemconfig(item, text=self.format_distance_label(distance))
 
-        self.canvas.coords(self.label_100, self.diagram_x[100], value_y)
-        self.canvas.coords(self.label_200, self.diagram_x[200], value_y)
-        self.canvas.coords(self.label_300, self.diagram_x[300], value_y)
+        for index, (distance, item) in enumerate(self.value_labels.items()):
+            state = "normal" if distance in active_distances else "hidden"
+            self.canvas.itemconfig(item, state=state)
+            y = value_y - 12 if compact_labels and index % 2 else value_y
+            self.canvas.coords(item, self.diagram_x[distance], y)
 
         if self.current_diameters:
             self.update_diagram(self.current_diameters)
             return
 
-        default_radiuses = {100: 12, 200: 18, 300: 24}
+        default_radiuses = {
+            distance: max(5, 8 + distance / 14)
+            for distance in self.get_active_distances()
+        }
         self.update_diagram_shapes(default_radiuses)
 
     def update_diagram(self, diameters):
-        self.current_diameters = diameters
+        active_diameters = {
+            distance: diameters[distance]
+            for distance in self.get_active_distances()
+            if distance in diameters
+        }
+        if len(active_diameters) != len(self.get_active_distances()):
+            self.current_diameters = None
+            return
+
+        self.current_diameters = active_diameters
+        self.update_visible_photo_circles()
+
+        # Le schema est volontairement plafonne pour rester lisible.
         wanted_scale = 4
-        max_diameter = max(diameters.values())
+        max_diameter = max(active_diameters.values())
         scale = min(wanted_scale, (self.diagram_max_radius * 2) / max_diameter)
 
         radiuses = {
             distance: max(6, (diameter * scale) / 2)
-            for distance, diameter in diameters.items()
+            for distance, diameter in active_diameters.items()
         }
 
         self.update_diagram_shapes(radiuses)
 
-        self.canvas.itemconfig(self.label_100, text=f"{diameters[100]:.2f} cm")
-        self.canvas.itemconfig(self.label_200, text=f"{diameters[200]:.2f} cm")
-        self.canvas.itemconfig(self.label_300, text=f"{diameters[300]:.2f} cm")
+        for distance, item in self.value_labels.items():
+            if distance in active_diameters:
+                self.canvas.itemconfig(item, text=f"{active_diameters[distance]:.2f} cm")
 
     def update_diagram_shapes(self, radiuses):
         center_y = self.diagram_center_y
 
-        radius_300 = radiuses[300]
+        max_distance = self.get_max_active_distance()
+        radius_max = radiuses[max_distance]
         self.canvas.coords(
             self.ligne_haut,
             self.diagram_x[0],
             center_y,
-            self.diagram_x[300],
-            center_y - radius_300,
+            self.diagram_x[max_distance],
+            center_y - radius_max,
         )
         self.canvas.coords(
             self.ligne_bas,
             self.diagram_x[0],
             center_y,
-            self.diagram_x[300],
-            center_y + radius_300,
+            self.diagram_x[max_distance],
+            center_y + radius_max,
         )
 
-        for distance, item in (
-            (100, self.cible_100),
-            (200, self.cible_200),
-            (300, self.cible_300),
-        ):
+        active_distances = set(self.get_active_distances())
+        for distance, item in self.diagram_targets.items():
+            if distance not in active_distances:
+                self.canvas.itemconfig(item, state="hidden")
+                continue
+
+            self.canvas.itemconfig(item, state="normal")
             radius = radiuses[distance]
             center_x = self.diagram_x[distance]
             ellipse_width = max(5, radius * 0.36)
@@ -714,57 +1101,37 @@ class Application(ctk.CTk):
             )
 
     def update_photo_circles(self, diameters):
+        """Dessine les cercles MOA sur la tete et sur la zone suivie par la souris."""
         self.current_diameters = diameters
-        max_diameter_px = max(diameters.values()) * self.pixel_per_cm
-        head_center_x = self.photo_offset_x + self.head_center[0] * self.image_scale
-        head_center_y = self.photo_offset_y + self.head_center[1] * self.image_scale
-        canvas_width = max(self.canvas_photo.winfo_width(), 1)
-        canvas_height = max(self.canvas_photo.winfo_height(), 1)
-        head_visible_radius = max(
-            18,
-            min(
-                head_center_x - 8,
-                canvas_width - head_center_x - 8,
-                head_center_y - 8,
-                canvas_height - head_center_y - 8,
-            ),
-        )
-        max_visible_radius = max(
-            18,
-            min(
-                self.image_width * 0.42,
-                self.image_height * 0.22,
-                self.canvas_photo.winfo_width() * 0.28,
-                head_visible_radius,
-            ),
-        )
-        visual_scale = min(1, (max_visible_radius * 2) / max_diameter_px)
 
         circle_groups = (
             (
                 self.head_center,
-                {
-                    100: self.cercle_100,
-                    200: self.cercle_200,
-                    300: self.cercle_300,
-                },
+                False,
+                self.head_circles,
             ),
             (
-                self.torso_center,
-                {
-                    100: self.torso_cercle_100,
-                    200: self.torso_cercle_200,
-                    300: self.torso_cercle_300,
-                },
+                self.torso_mouse_center,
+                True,
+                self.torso_circles,
             ),
         )
 
-        for center, items in circle_groups:
-            center_x = self.photo_offset_x + center[0] * self.image_scale
-            center_y = self.photo_offset_y + center[1] * self.image_scale
+        for center, is_canvas_position, items in circle_groups:
+            if center is None:
+                center_x = self.photo_offset_x + self.torso_center[0] * self.image_scale
+                center_y = self.photo_offset_y + self.torso_center[1] * self.image_scale
+            elif is_canvas_position:
+                center_x = center[0]
+                center_y = center[1]
+            else:
+                center_x = self.photo_offset_x + center[0] * self.image_scale
+                center_y = self.photo_offset_y + center[1] * self.image_scale
 
             for distance, item in items.items():
-                diameter_px = diameters[distance] * self.pixel_per_cm * visual_scale
+                if distance not in diameters:
+                    continue
+                diameter_px = diameters[distance] * self.pixel_per_cm
                 radius = diameter_px / 2
                 self.canvas_photo.coords(
                     item,
