@@ -8,6 +8,14 @@ Format conseille :
 - `MINOR` : nouvelle fonctionnalite.
 - `PATCH` : correction ou petite amelioration.
 
+## [1.3.2] - 2026-04-26
+
+### Corrige
+
+- Rafraichissement des changements de portee et d'unite centralise.
+- Recalcul complet effectue avant le repositionnement du schema et des cercles.
+- Nettoyage des anciennes valeurs quand aucune valeur MOA valide n'est saisie.
+
 ## [1.3.1] - 2026-04-26
 
 ### Modifie

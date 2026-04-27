@@ -2,7 +2,7 @@
 
 Application Windows/Python qui calcule et affiche le diametre theorique d'un groupement en MOA a 20, 50, 100, 200 et 300 yards ou metres.
 
-Version actuelle : `1.3.1`
+Version actuelle : `1.3.2`
 
 Createur : `FOSSILGOST`
 
@@ -12,6 +12,16 @@ L'interface est faite avec CustomTkinter. Elle affiche :
 - une projection sur une silhouette de reference ;
 - une zone principale sur la tete ;
 - une zone secondaire mobile avec la souris.
+
+## Apercu
+
+### Accueil
+
+![Accueil du MOA Visualiseur](images_app/home.png)
+
+### Exemple de visualisation
+
+![Visualisation d'un calcul MOA](images_app/MOA_20.png)
 
 ## Lancer le projet en Python
 
@@ -129,7 +139,7 @@ python build.py
 La version du logiciel est definie dans `app_info.py` :
 
 ```python
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 APP_CREATOR = "FOSSILGOST"
 ```
 

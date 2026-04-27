@@ -414,20 +414,60 @@ class Application(ctk.CTk):
             ).pack(side="left")
 
     def on_distance_mode_changed(self, _value=None):
-        self.update_distance_legend()
-        if hasattr(self, "distance_labels"):
-            self.update_diagram_layout()
-        if self.current_diameters:
-            self.calculer_moa()
+        self.refresh_active_display()
 
     def on_range_mode_changed(self, _value=None):
+        self.refresh_active_display()
+
+    def parse_moa_value(self, show_error=False):
+        raw_moa = self.MOA_Entry.get().strip().replace(",", ".")
+        if show_error:
+            self.error_label.configure(text="")
+
+        try:
+            moa = float(raw_moa)
+            if moa <= 0:
+                raise ValueError
+        except ValueError:
+            if show_error:
+                self.error_label.configure(text="Veuillez entrer un nombre positif valide.")
+            return None
+
+        return moa
+
+    def build_active_diameters(self, moa):
+        return {
+            distance: self.calculate_diameter(moa, distance)
+            for distance in self.get_active_distances()
+        }
+
+    def reset_diagram_values(self):
+        if not hasattr(self, "value_labels"):
+            return
+
+        for item in self.value_labels.values():
+            self.canvas.itemconfig(item, text="-- cm")
+
+    def refresh_active_display(self, show_error=False):
         self.update_distance_legend()
         if hasattr(self, "head_circles"):
             self.update_visible_photo_circles()
-        if self.current_diameters:
-            self.calculer_moa()
-        elif hasattr(self, "distance_labels"):
+
+        moa = self.parse_moa_value(show_error=show_error)
+        if moa is None:
+            self.current_diameters = None
+            self.reset_diagram_values()
+            if hasattr(self, "distance_labels"):
+                self.update_diagram_layout()
+            if hasattr(self, "canvas_photo"):
+                self.update_photo_layout()
+            return
+
+        self.current_diameters = self.build_active_diameters(moa)
+        if hasattr(self, "distance_labels"):
             self.update_diagram_layout()
+        if hasattr(self, "canvas_photo"):
+            self.update_photo_circles(self.current_diameters)
 
     def create_diagram(self):
         """Cree le schema horizontal qui compare les distances choisies."""
@@ -881,24 +921,7 @@ class Application(ctk.CTk):
 
     def calculer_moa(self):
         """Valide la saisie puis met a jour le schema et la silhouette."""
-        raw_moa = self.MOA_Entry.get().strip().replace(",", ".")
-        self.error_label.configure(text="")
-
-        try:
-            moa = float(raw_moa)
-            if moa <= 0:
-                raise ValueError
-        except ValueError:
-            self.error_label.configure(text="Veuillez entrer un nombre positif valide.")
-            return
-
-        diameters = {
-            distance: self.calculate_diameter(moa, distance)
-            for distance in self.get_active_distances()
-        }
-
-        self.update_diagram(diameters)
-        self.update_photo_circles(diameters)
+        self.refresh_active_display(show_error=True)
 
     def calculate_diameter(self, moa, distance):
         """Convertit une valeur MOA en diametre de groupement en centimetres."""
@@ -971,9 +994,13 @@ class Application(ctk.CTk):
             self.canvas_photo.coords(item, *head_coords)
         for item in self.torso_circles.values():
             self.canvas_photo.coords(item, *torso_coords)
+        self.update_visible_photo_circles()
 
     def update_diagram_layout(self, _event=None):
         """Repositionne le schema quand la fenetre change de taille."""
+        if not hasattr(self, "canvas"):
+            return
+
         width = max(self.canvas.winfo_width(), 320)
         height = max(self.canvas.winfo_height(), 120)
         margin_x = max(54, min(140, int(width * 0.08)))
@@ -1034,6 +1061,9 @@ class Application(ctk.CTk):
         self.update_diagram_shapes(default_radiuses)
 
     def update_diagram(self, diameters):
+        if not hasattr(self, "canvas"):
+            return
+
         active_diameters = {
             distance: diameters[distance]
             for distance in self.get_active_distances()
