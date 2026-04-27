@@ -8,6 +8,12 @@ Format conseille :
 - `MINOR` : nouvelle fonctionnalite.
 - `PATCH` : correction ou petite amelioration.
 
+## [1.3.3] - 2026-04-27
+
+### Ajoute
+
+- Script `lancer.bat` pour creer/reutiliser le venv `MOAvenv`, installer les dependances et lancer `main.py`.
+
 ## [1.3.2] - 2026-04-26
 
 ### Corrige
